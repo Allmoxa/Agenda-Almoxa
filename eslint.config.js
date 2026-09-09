@@ -9,7 +9,21 @@ export default tseslint.config(
   // .vercel e .nitro guardam a saída do build (milhares de .mjs); .tanstack é
   // cache do plugin de rotas. Sem ignorar, o lint varre tudo isso e leva
   // minutos em vez de segundos.
-  { ignores: ["dist", ".output", ".vinxi", ".vercel", ".nitro", ".tanstack"] },
+  // Os globs precisam do `/**`: no flat config um padrao sem barra casa a
+  // entrada com aquele nome, nao o que esta dentro dela. Sem isso o lint
+  // desce no bundle minificado do build e devolve dezenas de milhares de
+  // erros de formatacao em codigo que nao e nosso.
+  {
+    ignores: [
+      "dist/**",
+      ".output/**",
+      ".vinxi/**",
+      ".vercel/**",
+      ".nitro/**",
+      ".tanstack/**",
+      "src/routeTree.gen.ts",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
