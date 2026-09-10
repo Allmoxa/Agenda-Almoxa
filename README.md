@@ -23,12 +23,12 @@ npm run dev            # http://localhost:8081
 A porta é 8081 de propósito: o Almoxá usa a 8080, e os dois sobem juntos durante
 o desenvolvimento da integração.
 
-| Comando | O que faz |
-| --- | --- |
-| `npm run dev` | servidor de desenvolvimento |
-| `npm run build` | build de produção (preset Vercel) |
-| `npm test` | testes de fuso, grade de horários e iCalendar |
-| `npm run lint` | ESLint + Prettier |
+| Comando         | O que faz                                     |
+| --------------- | --------------------------------------------- |
+| `npm run dev`   | servidor de desenvolvimento                   |
+| `npm run build` | build de produção (preset Vercel)             |
+| `npm test`      | testes de fuso, grade de horários e iCalendar |
+| `npm run lint`  | ESLint + Prettier                             |
 
 ## Banco
 
@@ -63,29 +63,58 @@ npx supabase gen types typescript --project-id <id> > src/integrations/supabase/
 
 ### Modelo
 
-| Tabela | Papel |
-| --- | --- |
-| `providers` | o prestador: slug do link público, fuso, régua de agendamento, token do calendário |
-| `services` | o que ele oferece — duração e preço (em centavos) |
-| `availability_rules` | expediente semanal, em hora local (`TIME`, sem fuso) |
-| `availability_blocks` | folgas e feriados, em instante concreto (`TIMESTAMPTZ`) |
-| `appointments` | os horários marcados |
-| `booking_quota` | freio de abuso do formulário público |
+| Tabela                | Papel                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `providers`           | o prestador: slug do link público, fuso, régua de agendamento, token do calendário |
+| `services`            | o que ele oferece — duração e preço (em centavos)                                  |
+| `availability_rules`  | expediente semanal, em hora local (`TIME`, sem fuso)                               |
+| `availability_blocks` | folgas e feriados, em instante concreto (`TIMESTAMPTZ`)                            |
+| `appointments`        | os horários marcados                                                               |
+| `booking_quota`       | freio de abuso do formulário público                                               |
 
 **Duas decisões que sustentam o resto:**
 
-*Ninguém marca em cima de ninguém.* A constraint `appointments_sem_sobreposicao`
+_Ninguém marca em cima de ninguém._ A constraint `appointments_sem_sobreposicao`
 (`EXCLUDE USING gist`) recusa qualquer sobreposição na agenda de um prestador.
 Dois clientes clicando "confirmar" no mesmo segundo passam os dois pela checagem
 em `SELECT` — só o banco resolve esse empate. O segundo `INSERT` volta como
 `23P01` e a aplicação traduz para "esse horário acabou de ser preenchido".
 Cancelado sai do índice, então o horário volta a valer.
 
-*O cliente não fala com o Postgres.* Ele não tem sessão, então não há RLS para
+_O cliente não fala com o Postgres._ Ele não tem sessão, então não há RLS para
 avaliar: todo o tráfego público passa pelas server functions, que usam a service
 role e montam a resposta campo a campo. `anon` não recebe `GRANT` nenhum. Um
 `select("*")` em `src/lib/booking.functions.ts` vazaria o `calendar_token` do
 prestador ou o telefone de outro cliente sem nada acusar.
+
+## Deploy
+
+Vercel, com o preset já configurado no `vite.config.ts` e o cron no
+`vercel.json`. O build é `npm run build`.
+
+Cadastre em Settings > Environment Variables tudo que está no `.env.example`.
+Três delas erram calado se ficarem de fora:
+
+`AGENDA_PUBLIC_URL` precisa ser o domínio real. Ele monta os links de
+confirmação e cancelamento e a URL da assinatura de calendário — esquecer
+não quebra o deploy, só manda `http://localhost:8081` no e-mail do cliente,
+e aí o link não abre pra ninguém.
+
+`CRON_SECRET` autoriza `/api/cron/lembretes`. Sem ele a rota responde 503 em
+vez de abrir, então **os lembretes simplesmente não saem** — de propósito: é
+melhor não enviar do que deixar um endpoint público disparando e-mail. Gere um
+valor longo e aleatório; o Vercel Cron manda o header sozinho:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` é o que sustenta o agendamento público — o cliente
+não tem sessão, então é o servidor que grava por ele. Cadastre como variável de
+servidor; ela nunca deve aparecer numa `VITE_*`, que vai pro bundle do
+navegador.
+
+Feito isso, o cron passa a rodar de 15 em 15 minutos e a agenda está de pé.
 
 ## Como o compromisso chega no celular
 
@@ -131,18 +160,18 @@ diferem, a tela avisa.
 
 ## Rotas
 
-| Rota | Quem usa |
-| --- | --- |
-| `/` | apresentação |
-| `/a/$slug` | **agendamento público** — sem login |
-| `/agendamento/$token` | comprovante do cliente: ver, salvar no calendário, desmarcar |
-| `/auth` | entrada do prestador |
-| `/agenda` | horários marcados |
-| `/servicos` | o que ele oferece |
-| `/disponibilidade` | expediente e folgas |
-| `/link` | link público e assinatura de calendário |
-| `/api/calendario/$token` | feed `.ics` |
-| `/api/cron/lembretes` | disparo dos lembretes |
+| Rota                     | Quem usa                                                     |
+| ------------------------ | ------------------------------------------------------------ |
+| `/`                      | apresentação                                                 |
+| `/a/$slug`               | **agendamento público** — sem login                          |
+| `/agendamento/$token`    | comprovante do cliente: ver, salvar no calendário, desmarcar |
+| `/auth`                  | entrada do prestador                                         |
+| `/agenda`                | horários marcados                                            |
+| `/servicos`              | o que ele oferece                                            |
+| `/disponibilidade`       | expediente e folgas                                          |
+| `/link`                  | link público e assinatura de calendário                      |
+| `/api/calendario/$token` | feed `.ics`                                                  |
+| `/api/cron/lembretes`    | disparo dos lembretes                                        |
 
 ## Mobile
 
